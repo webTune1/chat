@@ -1,252 +1,102 @@
-// IMPORTANT: Replace the firebaseConfig object below with your Firebase project's config.
-// Get this from Firebase Console -> Project Settings -> Your apps -> SDK snippet (Firebase config).
-// Example:
-// const firebaseConfig = {
-//   apiKey: "AIzaSyA...",
-//   authDomain: "your-project.firebaseapp.com",
-//   databaseURL: "https://your-project-default-rtdb.firebaseio.com",
-//   projectId: "your-project",
-//   storageBucket: "your-project.appspot.com",
-//   messagingSenderId: "1234567890",
-//   appId: "1:1234567890:web:abcdef123"
-// };
-
-const firebaseConfig = {
-  apiKey: "REPLACE_WITH_YOUR_API_KEY",
-  authDomain: "REPLACE_WITH_YOUR_PROJECT.firebaseapp.com",
-  databaseURL: "https://REPLACE_WITH_YOUR_PROJECT.firebaseio.com",
-  projectId: "REPLACE_WITH_YOUR_PROJECT",
-  storageBucket: "REPLACE_WITH_YOUR_PROJECT.appspot.com",
-  messagingSenderId: "SENDER_ID",
-  appId: "APP_ID"
-};
-
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.database();
-
-let me = { uid: null, name: null };
-let currentChat = null; // { uid, name, roomId }
-
-const overlay = document.getElementById('overlay');
-const nameInput = document.getElementById('nameInput');
-const joinBtn = document.getElementById('joinBtn');
-const overlayMsg = document.getElementById('overlayMsg');
-
-const appEl = document.getElementById('app');
-const usersListEl = document.getElementById('usersList');
-const chatTitleEl = document.getElementById('chatTitle');
-const statusHint = document.getElementById('statusHint');
-const youBadge = document.getElementById('youBadge');
-const messagesEl = document.getElementById('messages');
-const msgForm = document.getElementById('msgForm');
-const msgInput = document.getElementById('msgInput');
-
-const MAX_ONLINE = 5;
-
-function uidShort(uid){
-  if(!uid) return '';
-  return uid.slice(0,6);
+/* Same aesthetic CSS used earlier (keeps UI pleasant) */
+:root{
+  --bg:#0f1724;
+  --card:#0b1220;
+  --accent:#6ee7b7;
+  --accent-2:#60a5fa;
+  --muted:#9ca3af;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  background:linear-gradient(180deg,#081025 0%, #071021 50%, #061220 100%);
+  color:#e6eef8;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:28px;
 }
 
-// deterministic room id
-function roomIdFor(u1, u2){
-  return (u1 < u2) ? `${u1}_${u2}` : `${u2}_${u1}`;
+.overlay{
+  position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(180deg, rgba(2,6,23,0.55), rgba(2,6,23,0.6));
+  z-index:40;
 }
-
-function showOverlayMsg(text){
-  overlayMsg.textContent = text;
+.dialog{
+  width:360px; background:var(--card); border-radius:14px; padding:22px;
+  box-shadow:0 10px 40px rgba(2,6,23,0.6); text-align:center;
 }
-
-// graceful join
-joinBtn.addEventListener('click', async () => {
-  const name = (nameInput.value || '').trim();
-  if(!name) { showOverlayMsg('Please enter a name'); return; }
-  joinBtn.disabled = true;
-  showOverlayMsg('Joining...');
-  try {
-    const result = await auth.signInAnonymously();
-    me.uid = result.user.uid;
-    me.name = name;
-
-    // check presence count
-    const snap = await db.ref('presence').once('value');
-    const onlineCount = snap.numChildren();
-    const amAlready = snap.hasChild(me.uid);
-    if(onlineCount >= MAX_ONLINE && !amAlready){
-      showOverlayMsg(`Too many users online (limit ${MAX_ONLINE}). Try later.`);
-      await auth.signOut();
-      joinBtn.disabled = false;
-      return;
-    }
-
-    // set presence and onDisconnect
-    const pRef = db.ref(`presence/${me.uid}`);
-    await pRef.set({ name: me.name, ts: firebase.database.ServerValue.TIMESTAMP });
-    pRef.onDisconnect().remove();
-
-    overlay.classList.add('hidden');
-    appEl.classList.remove('hidden');
-    youBadge.textContent = `You: ${me.name}`;
-
-    listenPresence();
-  } catch (err) {
-    console.error('Join error', err);
-    const msg = (err && err.message) ? err.message : JSON.stringify(err);
-    showOverlayMsg('Failed to join: ' + msg);
-    joinBtn.disabled = false;
-  }
-});
-
-function listenPresence(){
-  const presenceRef = db.ref('presence');
-  presenceRef.off();
-  presenceRef.on('value', snap => {
-    usersListEl.innerHTML = '';
-    const list = [];
-    snap.forEach(child => {
-      const uid = child.key;
-      const data = child.val();
-      list.push({ uid, name: data.name, ts: data.ts });
-    });
-    // sort by name
-    list.sort((a,b) => a.name.localeCompare(b.name));
-    for(const u of list){
-      renderUser(u.uid, u.name);
-    }
-  });
-
-  presenceRef.on('child_removed', snapshot => {
-    const uid = snapshot.key;
-    if(currentChat && currentChat.uid === uid){
-      // other user went offline
-      addSystemMessage(`${currentChat.name} went offline`);
-      statusHint.textContent = 'User offline';
-      // keep messages visible but disable send
-      msgForm.classList.add('hidden');
-    }
-  });
+.logo{
+  width:60px; height:60px; border-radius:10px; margin:0 auto 12px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  display:flex; align-items:center; justify-content:center; font-weight:700; color:#022023; font-size:20px;
+  box-shadow:0 6px 20px rgba(14,165,233,0.12) inset;
 }
-
-function renderUser(uid, name){
-  // show self on top with subtle style
-  const li = document.createElement('li');
-  li.id = `user-${uid}`;
-  li.className = (uid === me.uid) ? 'self' : '';
-  const avatar = document.createElement('div');
-  avatar.className = 'userAvatar';
-  avatar.textContent = initials(name);
-  const meta = document.createElement('div');
-  meta.className = 'userMeta';
-  const n = document.createElement('div');
-  n.className = 'name';
-  n.textContent = name + (uid === me.uid ? ' (you)' : '');
-  const s = document.createElement('div');
-  s.className = 'status';
-  s.textContent = (uid === me.uid) ? `id ${uidShort(uid)}` : 'online';
-  meta.appendChild(n);
-  meta.appendChild(s);
-  const action = document.createElement('div');
-  action.className = 'userAction';
-  action.textContent = (uid === me.uid) ? '' : 'Open';
-  li.appendChild(avatar);
-  li.appendChild(meta);
-  li.appendChild(action);
-
-  if(uid !== me.uid){
-    li.addEventListener('click', () => openChatWith(uid, name));
-  } else {
-    li.style.opacity = '0.9';
-  }
-  usersListEl.appendChild(li);
+h1{margin:6px 0 2px 0; font-size:20px}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.dialog input{
+  width:100%; padding:12px 14px; margin-top:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.04);
+  background:transparent; color:inherit; outline:none;
 }
+.row{display:flex; justify-content:center; margin-top:12px}
+button{background:linear-gradient(90deg,var(--accent),var(--accent-2)); color:#042022; border:none; padding:10px 16px; border-radius:10px; cursor:pointer; font-weight:600}
+button:disabled{opacity:0.6; cursor:not-allowed}
 
-function initials(name){
-  const parts = (name||'').trim().split(/\s+/);
-  if(parts.length === 0) return '';
-  if(parts.length === 1) return parts[0].slice(0,2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+.app{
+  width:min(1100px,98vw); max-width:1200px; height:78vh; border-radius:14px; overflow:hidden;
+  display:flex; gap:14px; box-shadow:0 20px 60px rgba(2,6,23,0.6);
 }
-
-function openChatWith(uid, name){
-  currentChat = { uid, name, roomId: roomIdFor(me.uid, uid) };
-  chatTitleEl.textContent = `Chat with ${name}`;
-  statusHint.textContent = `id ${uidShort(uid)} • private`;
-  messagesEl.innerHTML = '';
-  messagesEl.classList.remove('empty');
-  msgForm.classList.remove('hidden');
-
-  // listen messages
-  const msgsRef = db.ref(`chats/${currentChat.roomId}/messages`);
-  msgsRef.off();
-  msgsRef.limitToLast(200).on('child_added', snapshot => {
-    appendMessage(snapshot.val());
-  });
+.sidebar{
+  width:300px; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  padding:16px; display:flex; flex-direction:column; gap:12px;
+  border-right:1px solid rgba(255,255,255,0.03);
 }
+.sideHeader{display:flex; justify-content:space-between; align-items:flex-start}
+.youBadge{padding:6px 8px; border-radius:8px; background:rgba(255,255,255,0.02); font-weight:600}
 
-function closeChat(){
-  currentChat = null;
-  chatTitleEl.textContent = 'Select a user to chat';
-  statusHint.textContent = 'No chat selected';
-  messagesEl.innerHTML = '';
-  messagesEl.classList.add('empty');
-  msgForm.classList.add('hidden');
+.sectionTitle{margin:8px 0 8px 0; font-size:13px; color:var(--muted)}
+.usersList{list-style:none; padding:0; margin:0; overflow:auto; max-height:55vh}
+.usersList li{
+  display:flex; gap:12px; align-items:center; padding:10px; border-radius:10px; cursor:pointer;
+  transition:transform .08s ease, background .08s;
 }
-
-// send
-msgForm.addEventListener('submit', async (ev) => {
-  ev.preventDefault();
-  const text = (msgInput.value || '').trim();
-  if(!text || !currentChat) return;
-  const msgsRef = db.ref(`chats/${currentChat.roomId}/messages`);
-  const msgObj = {
-    fromUid: me.uid,
-    fromName: me.name,
-    text,
-    ts: firebase.database.ServerValue.TIMESTAMP
-  };
-  try {
-    await msgsRef.push(msgObj);
-    msgInput.value = '';
-  } catch (err) {
-    console.error('Send failed', err);
-    alert('Failed to send message: ' + (err.message || JSON.stringify(err)));
-  }
-});
-
-// append message
-function appendMessage(m){
-  const el = document.createElement('div');
-  const mine = m.fromUid === me.uid;
-  el.className = 'msg ' + (mine ? 'me' : 'other');
-  const meta = document.createElement('div');
-  meta.className = 'meta';
-  const date = new Date(m.ts || Date.now());
-  meta.textContent = `${m.fromName} • ${date.toLocaleTimeString()}`;
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  bubble.textContent = m.text;
-  el.appendChild(meta);
-  el.appendChild(bubble);
-  messagesEl.appendChild(el);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+.usersList li:hover{transform:translateX(4px); background:rgba(255,255,255,0.01)}
+.userAvatar{
+  width:42px; height:42px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:700; color:#042022;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));
 }
+.userMeta{flex:1; display:flex; flex-direction:column}
+.userMeta .name{font-weight:600}
+.userMeta .status{font-size:12px; color:var(--muted); margin-top:2px}
+.userAction{font-size:12px; color:var(--muted)}
 
-function addSystemMessage(text){
-  const el = document.createElement('div');
-  el.className = 'msg';
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  bubble.style.background = 'transparent';
-  bubble.style.border = '1px dashed rgba(255,255,255,0.04)';
-  bubble.textContent = text;
-  el.appendChild(bubble);
-  messagesEl.appendChild(el);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+.chat{flex:1; display:flex; flex-direction:column; background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01)); padding:0}
+.chatHeader{padding:16px; border-bottom:1px solid rgba(255,255,255,0.02); display:flex; justify-content:space-between; align-items:center}
+.messages{flex:1; padding:18px; overflow:auto; display:flex; flex-direction:column; gap:10px}
+.messages.empty{align-items:center; justify-content:center}
+.hint{color:var(--muted); text-align:center; max-width:70%;}
+
+.msg{max-width:72%; display:flex; flex-direction:column; gap:6px}
+.msg.me{margin-left:auto; align-items:flex-end}
+.meta{font-size:12px; color:var(--muted)}
+.bubble{
+  padding:12px 14px; border-radius:12px; background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border:1px solid rgba(255,255,255,0.03);
 }
+.msg.me .bubble{background:linear-gradient(90deg, rgba(110,231,183,0.12), rgba(96,165,250,0.1)); border-color:rgba(96,165,250,0.12)}
+.msg.other .bubble{background:rgba(255,255,255,0.02)}
 
-window.addEventListener('beforeunload', () => {
-  if(me.uid){
-    try { db.ref(`presence/${me.uid}`).remove(); } catch(e){}
-  }
-});
+.msgForm{display:flex; gap:10px; padding:12px; border-top:1px solid rgba(255,255,255,0.02)}
+.msgForm input{flex:1; padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.03); background:transparent; color:inherit; outline:none}
+.msgForm button{padding:10px 14px; border-radius:10px; border:none; background:linear-gradient(90deg,var(--accent),var(--accent-2)); color:#042022; font-weight:700; cursor:pointer}
+
+@media(max-width:880px){
+  .app{flex-direction:column; height:92vh}
+  .sidebar{width:100%; flex-direction:row; align-items:center; padding:10px; gap:8px; overflow:auto}
+  .usersList{display:flex; gap:8px; max-height:none}
+  .usersList li{min-width:130px; flex-direction:column; align-items:flex-start}
+  .chat{width:100%}
+}
