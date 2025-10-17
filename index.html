@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Friends Chat</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <div id="overlay" class="overlay">
+    <div class="box">
+      <h2>Enter your name</h2>
+      <input id="nameInput" placeholder="Your display name" maxlength="30" />
+      <div class="row">
+        <button id="joinBtn">Join Chat</button>
+      </div>
+      <p id="overlayMsg" class="muted"></p>
+    </div>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <h3>Online</h3>
+      <ul id="usersList" class="usersList"></ul>
+      <div class="muted small">Max allowed online: 5</div>
+    </aside>
+
+    <main class="chat">
+      <header class="chatHeader">
+        <div id="chatTitle">Select a user to chat</div>
+        <div id="youBadge" class="muted small"></div>
+      </header>
+
+      <div id="messages" class="messages"></div>
+
+      <form id="msgForm" class="msgForm hidden">
+        <input id="msgInput" autocomplete="off" placeholder="Type a message..." maxlength="800" />
+        <button type="submit">Send</button>
+      </form>
+    </main>
+  </div>
+
+  <!-- Firebase (compat) SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <script src="assets/js/main.js"></script>
+</body>
+</html>
