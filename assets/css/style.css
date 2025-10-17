@@ -1,0 +1,65 @@
+/* Simple styling - keep it minimal and mobile friendly */
+:root{
+  --bg:#f6f7fb;
+  --panel:#ffffff;
+  --accent:#1a73e8;
+  --muted:#6b7280;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  background:var(--bg);
+  color:#111827;
+  height:100vh;
+  display:flex;
+  align-items:stretch;
+  justify-content:center;
+}
+
+/* Overlay for name entry */
+.overlay{
+  position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.35);
+}
+.box{
+  background:var(--panel); padding:20px; border-radius:8px; width:320px; box-shadow:0 6px 20px rgba(2,6,23,0.15);
+}
+.box h2{margin:0 0 10px 0; font-size:18px}
+.box input{width:100%; padding:10px; margin-bottom:10px; border-radius:6px; border:1px solid #e6e9ef}
+.row{display:flex; justify-content:flex-end}
+button{background:var(--accent); color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer}
+button:disabled{opacity:0.6; cursor:not-allowed}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+
+.hidden{display:none}
+
+/* Main app layout */
+.app{display:flex; width:min(1100px,96vw); height:78vh; margin:20px; border-radius:10px; overflow:hidden; background:transparent}
+.sidebar{width:260px; background:var(--panel); padding:16px; border-right:1px solid #eef0f5}
+.sidebar h3{margin:0 0 8px 0}
+.usersList{list-style:none; padding:0; margin:0}
+.usersList li{
+  padding:8px; border-radius:6px; margin-bottom:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;
+}
+.usersList li:hover{background:#f1f5ff}
+.usersList .name{font-weight:600}
+.usersList .status{font-size:12px; color:var(--muted)}
+
+/* chat panel */
+.chat{flex:1; display:flex; flex-direction:column; background:var(--panel)}
+.chatHeader{padding:12px 16px; border-bottom:1px solid #eef0f5; display:flex; justify-content:space-between}
+.messages{flex:1; padding:16px; overflow:auto; background:linear-gradient(180deg,#fbfdff, #ffffff)}
+.msg{margin-bottom:12px; max-width:70%;}
+.msg .meta{font-size:12px; color:var(--muted); margin-bottom:4px}
+.msg.me{margin-left:auto; text-align:right}
+.msg.me .bubble{background:#dcf8c6}
+.bubble{padding:10px; background:#fff; border-radius:8px; border:1px solid #eef0f5; box-shadow:0 1px 0 rgba(0,0,0,0.02)}
+.msgForm{display:flex; padding:12px; border-top:1px solid #eef0f5}
+.msgForm input{flex:1; padding:10px; border-radius:8px; border:1px solid #e6e9ef; margin-right:8px}
+@media(max-width:700px){
+  .app{flex-direction:column; height:92vh}
+  .sidebar{width:100%; display:flex; overflow:auto}
+  .chat{flex:1}
+}
