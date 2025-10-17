@@ -4,37 +4,56 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Friends Chat</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body>
   <div id="overlay" class="overlay">
-    <div class="box">
-      <h2>Enter your name</h2>
+    <div class="dialog">
+      <div class="logo">FC</div>
+      <h1>Welcome</h1>
+      <p class="muted">Enter the name you'll use in this private chat</p>
       <input id="nameInput" placeholder="Your display name" maxlength="30" />
       <div class="row">
-        <button id="joinBtn">Join Chat</button>
+        <button id="joinBtn">Join</button>
       </div>
-      <p id="overlayMsg" class="muted"></p>
+      <p id="overlayMsg" class="muted small"></p>
+      <p class="small muted note">This demo uses Firebase Realtime Database. Replace the firebaseConfig in assets/js/main.js with your project values.</p>
     </div>
   </div>
 
   <div id="app" class="app hidden">
     <aside class="sidebar">
-      <h3>Online</h3>
-      <ul id="usersList" class="usersList"></ul>
-      <div class="muted small">Max allowed online: 5</div>
+      <header class="sideHeader">
+        <div>
+          <h2>Friends Chat</h2>
+          <div class="muted small">Private — up to 5 online</div>
+        </div>
+        <div id="youBadge" class="youBadge muted"></div>
+      </header>
+
+      <section class="usersWrap">
+        <h3 class="sectionTitle">Online</h3>
+        <ul id="usersList" class="usersList"></ul>
+      </section>
+
+      <footer class="sideFooter muted small">
+        Built for friends • No public access
+      </footer>
     </aside>
 
     <main class="chat">
       <header class="chatHeader">
         <div id="chatTitle">Select a user to chat</div>
-        <div id="youBadge" class="muted small"></div>
+        <div class="muted small" id="statusHint">No chat selected</div>
       </header>
 
-      <div id="messages" class="messages"></div>
+      <div id="messages" class="messages empty">
+        <div class="hint">Choose a user on the left to start a private chat.</div>
+      </div>
 
-      <form id="msgForm" class="msgForm hidden">
-        <input id="msgInput" autocomplete="off" placeholder="Type a message..." maxlength="800" />
+      <form id="msgForm" class="msgForm hidden" autocomplete="off">
+        <input id="msgInput" placeholder="Type a message..." maxlength="800" />
         <button type="submit">Send</button>
       </form>
     </main>
