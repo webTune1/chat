@@ -1,5 +1,16 @@
-// NOTE: Replace the firebaseConfig object with your Firebase project's config.
-// See README.md below for setup steps.
+// IMPORTANT: Replace the firebaseConfig object below with your Firebase project's config.
+// Get this from Firebase Console -> Project Settings -> Your apps -> SDK snippet (Firebase config).
+// Example:
+// const firebaseConfig = {
+//   apiKey: "AIzaSyA...",
+//   authDomain: "your-project.firebaseapp.com",
+//   databaseURL: "https://your-project-default-rtdb.firebaseio.com",
+//   projectId: "your-project",
+//   storageBucket: "your-project.appspot.com",
+//   messagingSenderId: "1234567890",
+//   appId: "1:1234567890:web:abcdef123"
+// };
+
 const firebaseConfig = {
   apiKey: "REPLACE_WITH_YOUR_API_KEY",
   authDomain: "REPLACE_WITH_YOUR_PROJECT.firebaseapp.com",
@@ -25,6 +36,7 @@ const overlayMsg = document.getElementById('overlayMsg');
 const appEl = document.getElementById('app');
 const usersListEl = document.getElementById('usersList');
 const chatTitleEl = document.getElementById('chatTitle');
+const statusHint = document.getElementById('statusHint');
 const youBadge = document.getElementById('youBadge');
 const messagesEl = document.getElementById('messages');
 const msgForm = document.getElementById('msgForm');
@@ -32,32 +44,34 @@ const msgInput = document.getElementById('msgInput');
 
 const MAX_ONLINE = 5;
 
-// helper: compute roomId from two uids (deterministic)
+function uidShort(uid){
+  if(!uid) return '';
+  return uid.slice(0,6);
+}
+
+// deterministic room id
 function roomIdFor(u1, u2){
   return (u1 < u2) ? `${u1}_${u2}` : `${u2}_${u1}`;
 }
 
-// show a short message in overlay
 function showOverlayMsg(text){
   overlayMsg.textContent = text;
 }
 
-// join flow
+// graceful join
 joinBtn.addEventListener('click', async () => {
   const name = (nameInput.value || '').trim();
   if(!name) { showOverlayMsg('Please enter a name'); return; }
   joinBtn.disabled = true;
-  showOverlayMsg('Checking...');
+  showOverlayMsg('Joining...');
   try {
-    // sign in anonymously so we have an auth.uid and can use .onDisconnect
     const result = await auth.signInAnonymously();
     me.uid = result.user.uid;
     me.name = name;
 
-    // check online count
+    // check presence count
     const snap = await db.ref('presence').once('value');
     const onlineCount = snap.numChildren();
-    // If our uid is already present (rare reload), allow it.
     const amAlready = snap.hasChild(me.uid);
     if(onlineCount >= MAX_ONLINE && !amAlready){
       showOverlayMsg(`Too many users online (limit ${MAX_ONLINE}). Try later.`);
@@ -66,92 +80,120 @@ joinBtn.addEventListener('click', async () => {
       return;
     }
 
-    // set presence for current user and remove on disconnect
+    // set presence and onDisconnect
     const pRef = db.ref(`presence/${me.uid}`);
     await pRef.set({ name: me.name, ts: firebase.database.ServerValue.TIMESTAMP });
     pRef.onDisconnect().remove();
 
-    // now hide overlay, show app
     overlay.classList.add('hidden');
     appEl.classList.remove('hidden');
     youBadge.textContent = `You: ${me.name}`;
 
-    // listen for presence and chats
     listenPresence();
   } catch (err) {
-    console.error(err);
-    showOverlayMsg('Failed to join: ' + err.message);
+    console.error('Join error', err);
+    const msg = (err && err.message) ? err.message : JSON.stringify(err);
+    showOverlayMsg('Failed to join: ' + msg);
     joinBtn.disabled = false;
   }
 });
 
-// presence listeners
 function listenPresence(){
   const presenceRef = db.ref('presence');
-  presenceRef.on('child_added', snapshot => {
-    const uid = snapshot.key;
-    const data = snapshot.val();
-    renderUserListAdd(uid, data);
-  });
-  presenceRef.on('child_removed', snapshot => {
-    const uid = snapshot.key;
-    renderUserListRemove(uid);
-    // if the person we were chatting with left, clear chat area
-    if(currentChat && currentChat.uid === uid){
-      closeChat();
-      chatTitleEl.textContent = 'User went offline';
+  presenceRef.off();
+  presenceRef.on('value', snap => {
+    usersListEl.innerHTML = '';
+    const list = [];
+    snap.forEach(child => {
+      const uid = child.key;
+      const data = child.val();
+      list.push({ uid, name: data.name, ts: data.ts });
+    });
+    // sort by name
+    list.sort((a,b) => a.name.localeCompare(b.name));
+    for(const u of list){
+      renderUser(u.uid, u.name);
     }
   });
-  presenceRef.on('child_changed', snapshot => {
+
+  presenceRef.on('child_removed', snapshot => {
     const uid = snapshot.key;
-    const data = snapshot.val();
-    renderUserListUpdate(uid, data);
+    if(currentChat && currentChat.uid === uid){
+      // other user went offline
+      addSystemMessage(`${currentChat.name} went offline`);
+      statusHint.textContent = 'User offline';
+      // keep messages visible but disable send
+      msgForm.classList.add('hidden');
+    }
   });
 }
 
-// render helpers for online users list
-function renderUserListAdd(uid, data){
-  // do not show self in list
-  if(uid === me.uid) return;
-  let li = document.createElement('li');
+function renderUser(uid, name){
+  // show self on top with subtle style
+  const li = document.createElement('li');
   li.id = `user-${uid}`;
-  li.dataset.uid = uid;
-  li.innerHTML = `<span class="name">${escapeHtml(data.name)}</span><span class="status muted">online</span>`;
-  li.addEventListener('click', () => openChatWith(uid, data.name));
+  li.className = (uid === me.uid) ? 'self' : '';
+  const avatar = document.createElement('div');
+  avatar.className = 'userAvatar';
+  avatar.textContent = initials(name);
+  const meta = document.createElement('div');
+  meta.className = 'userMeta';
+  const n = document.createElement('div');
+  n.className = 'name';
+  n.textContent = name + (uid === me.uid ? ' (you)' : '');
+  const s = document.createElement('div');
+  s.className = 'status';
+  s.textContent = (uid === me.uid) ? `id ${uidShort(uid)}` : 'online';
+  meta.appendChild(n);
+  meta.appendChild(s);
+  const action = document.createElement('div');
+  action.className = 'userAction';
+  action.textContent = (uid === me.uid) ? '' : 'Open';
+  li.appendChild(avatar);
+  li.appendChild(meta);
+  li.appendChild(action);
+
+  if(uid !== me.uid){
+    li.addEventListener('click', () => openChatWith(uid, name));
+  } else {
+    li.style.opacity = '0.9';
+  }
   usersListEl.appendChild(li);
 }
-function renderUserListRemove(uid){
-  const el = document.getElementById(`user-${uid}`);
-  if(el) el.remove();
-}
-function renderUserListUpdate(uid, data){
-  const el = document.getElementById(`user-${uid}`);
-  if(el) el.querySelector('.name').textContent = data.name || 'Unknown';
+
+function initials(name){
+  const parts = (name||'').trim().split(/\s+/);
+  if(parts.length === 0) return '';
+  if(parts.length === 1) return parts[0].slice(0,2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-// open chat with a user
 function openChatWith(uid, name){
   currentChat = { uid, name, roomId: roomIdFor(me.uid, uid) };
   chatTitleEl.textContent = `Chat with ${name}`;
+  statusHint.textContent = `id ${uidShort(uid)} • private`;
   messagesEl.innerHTML = '';
+  messagesEl.classList.remove('empty');
   msgForm.classList.remove('hidden');
-  // start listening messages in this room
+
+  // listen messages
   const msgsRef = db.ref(`chats/${currentChat.roomId}/messages`);
-  msgsRef.off(); // remove any previous listeners
+  msgsRef.off();
   msgsRef.limitToLast(200).on('child_added', snapshot => {
-    const m = snapshot.val();
-    appendMessage(m);
+    appendMessage(snapshot.val());
   });
 }
 
-// close chat UI
 function closeChat(){
   currentChat = null;
-  msgForm.classList.add('hidden');
+  chatTitleEl.textContent = 'Select a user to chat';
+  statusHint.textContent = 'No chat selected';
   messagesEl.innerHTML = '';
+  messagesEl.classList.add('empty');
+  msgForm.classList.add('hidden');
 }
 
-// send message
+// send
 msgForm.addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const text = (msgInput.value || '').trim();
@@ -168,14 +210,15 @@ msgForm.addEventListener('submit', async (ev) => {
     msgInput.value = '';
   } catch (err) {
     console.error('Send failed', err);
-    alert('Failed to send message: ' + err.message);
+    alert('Failed to send message: ' + (err.message || JSON.stringify(err)));
   }
 });
 
-// append message to messages view
+// append message
 function appendMessage(m){
-  const div = document.createElement('div');
-  div.className = 'msg' + (m.fromUid === me.uid ? ' me' : '');
+  const el = document.createElement('div');
+  const mine = m.fromUid === me.uid;
+  el.className = 'msg ' + (mine ? 'me' : 'other');
   const meta = document.createElement('div');
   meta.className = 'meta';
   const date = new Date(m.ts || Date.now());
@@ -183,22 +226,27 @@ function appendMessage(m){
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.textContent = m.text;
-  div.appendChild(meta);
-  div.appendChild(bubble);
-  messagesEl.appendChild(div);
+  el.appendChild(meta);
+  el.appendChild(bubble);
+  messagesEl.appendChild(el);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-// small utility to escape text into textContent-safe strings
-function escapeHtml(str){
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
+function addSystemMessage(text){
+  const el = document.createElement('div');
+  el.className = 'msg';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.style.background = 'transparent';
+  bubble.style.border = '1px dashed rgba(255,255,255,0.04)';
+  bubble.textContent = text;
+  el.appendChild(bubble);
+  messagesEl.appendChild(el);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-// Clean up presence if user refreshes or closes tab (this is handled by onDisconnect but good to try)
 window.addEventListener('beforeunload', () => {
   if(me.uid){
-    db.ref(`presence/${me.uid}`).remove();
+    try { db.ref(`presence/${me.uid}`).remove(); } catch(e){}
   }
 });
